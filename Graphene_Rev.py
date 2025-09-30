@@ -2,7 +2,8 @@ from matplotlib.cm import ScalarMappable
 from matplotlib.colors import Normalize
 import matplotlib.pyplot as plt 
 import numpy as np
-from matplotlib.path import Path
+from scipy.optimize import brentq
+from scipy.special import expit
 
 
 class Hamiltonian:
@@ -195,12 +196,15 @@ class Hamiltonian:
     def fd_dist (self, E,mu):
         # Boltzmann constant in eV/K
         kb = 8.61733e-5
-        return 1/(np.exp((E-mu)/(kb*self.T))+1)
+        arg = (E - mu) / (kb * self.T)
+        return expit(-arg)
     
     def fd_dist_der (self, E,mu):
         # Boltzmann constant in eV/K
         kb = 8.61733e-5
-        return -np.exp((E-mu)/(kb*self.T))/(((np.exp((E-mu)/(kb*self.T))+1)**2)*(kb*self.T))
+        arg = (E - mu) / (kb * self.T)
+        fx = expit(-arg)
+        return -fx * (1 - fx) / (kb * self.T)
 
     def dirac_delta(self, E_i, f_i, E_j, f_j):
         #all things with i index should be (n,1) arrays,
@@ -230,7 +234,7 @@ class Hamiltonian:
         
         
      
-    def cal_e_density(self, mu, N):  
+    def cal_e_density(self, mu, Ep, Em, N):  
         
         
         fd_Ep = self.fd_dist(Ep,mu)
@@ -239,35 +243,25 @@ class Hamiltonian:
         
         return (np.sum(fd_Ep) + np.sum(fd_Em)) / N
 
-    def calc_mu(self, Ep, Em, tol=1e-6, max_iter=100):
+    def calc_mu(self, Ep, Em, tol=1e-6):
         
         Ep_flat = Ep.flatten()
         Em_flat = Em.flatten()
         N = Ep_flat.size
         
-        # search boundaries for mu
+        
         mu_low = np.min(Em_flat) 
         mu_high = np.max(Ep_flat) 
 
-        # Bisection loop
-        for i in range(max_iter):
-            mu_mid = (mu_low + mu_high) / 2
-            n_mid = self.cal_e_density(mu_mid, N)
-            
-            error = n_mid - self.N_e_unitcell
-            
-            if abs(error) < tol:
-                return mu_mid
-            
-            if error < 0:
-                # n_mid is too low. Shift search range up.
-                mu_low = mu_mid
-            else:
-                # n_mid is too high. Shift search range down.
-                mu_high = mu_mid
-                
-        print(f"Bisection did not converge for n_e_unitcell={self.N_e_unitcell} within {max_iter} iterations.")
-        return mu_mid
+        
+        # function whose root we want to find
+        def root_function(mu):
+            n_calc = self.cal_e_density(mu, Ep, Em, N)
+            return n_calc - self.N_e_unitcell
+
+        
+        return brentq(root_function, mu_low, mu_high, xtol=tol)
+       
        
         
         
@@ -332,7 +326,7 @@ b1 = B[:,0]
 b2 = B[:,1]
 
 # k-space grid 
-N =150 # number of k-points per dimension, total points = N^2
+N =120 # number of k-points per dimension, total points = N^2
 
 #Temperature 
 T = 300
